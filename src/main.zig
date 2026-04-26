@@ -1,9 +1,11 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const rg = @import("raygui");
 const rl = @import("raylib");
 
 const solver = @import("solver.zig");
+const NodeCollection = @import("NodeCollection.zig");
 
 // Constants
 const f32_eps = std.math.floatEps(f32);
@@ -34,77 +36,22 @@ var nodes: NodeCollection = .empty;
 
 var drag_mode: bool = false;
 var press_position: rl.Vector2 = .zero();
+var show_faulty: bool = true;
+var show_welcome_screen: bool = true;
+
+var last_spread_radius: f32 = 0;
 
 var ui_bounds: std.array_hash_map.String(rl.Rectangle) = .empty;
-
-// Types
-const NodeCollection = struct {
-    array_list: std.ArrayList(solver.Node),
-
-    pub const empty: NodeCollection = .{
-        .array_list = .empty,
-    };
-
-    pub fn deinit(self: *NodeCollection, gpa: std.mem.Allocator) void {
-        self.array_list.deinit(gpa);
-    }
-
-    pub fn append(self: *NodeCollection, gpa: std.mem.Allocator, item: solver.Node) error{OutOfMemory}!void {
-        return self.array_list.append(gpa, item);
-    }
-
-    // Find at position
-    pub fn findAtPos(self: *const NodeCollection, x: f32, y: f32, r: f32) ?usize {
-        var best_dist: f32 = std.math.inf(f32);
-        var best_idx: ?usize = null;
-
-        const v1: rl.Vector2 = .init(x, y);
-        for (self.array_list.items, 0..) |node, i| {
-            const v2: rl.Vector2 = .init(node.x, node.y);
-            const dist = v1.distanceSqr(v2);
-            if (dist < r * r and dist < best_dist) {
-                best_dist = dist;
-                best_idx = i;
-            }
-        }
-        return best_idx orelse null;
-    }
-
-    // Remove item
-    pub fn remove(self: *NodeCollection, idx: usize) void {
-        _ = self.array_list.swapRemove(idx);
-    }
-
-    fn lessThanX(ctx: void, a: solver.Node, b: solver.Node) bool {
-        _ = ctx;
-        return a.x < b.x;
-    }
-
-    fn lessThanY(ctx: void, a: solver.Node, b: solver.Node) bool {
-        _ = ctx;
-        return a.y < b.y;
-    }
-
-    // Items sorted by increasing x position
-    pub fn sortByX(self: *NodeCollection) void {
-        std.sort.heap(solver.Node, self.array_list.items, {}, lessThanX);
-    }
-    // Items sorted by increasing y position
-    pub fn sortByY(self: *NodeCollection) void {
-        std.sort.heap(solver.Node, self.array_list.items, {}, lessThanY);
-    }
-
-    pub fn setFaulty(self: *NodeCollection, idx: usize) void {
-        _ = self;
-        _ = idx;
-        //
-    }
-};
 
 pub fn main(init: std.process.Init) !void {
     var frame_arena: std.heap.ArenaAllocator = .init(init.gpa);
     defer frame_arena.deinit();
     const frame_alloc = frame_arena.allocator();
+
+    var prng: std.Random.DefaultPrng = .init(@intCast(std.Io.Timestamp.now(init.io, .real).toMilliseconds()));
+    const rng = prng.random();
+
+    _ = rng.int(u32);
 
     rl.setConfigFlags(.{ .window_resizable = true });
     rl.initWindow(1280, 720, "Fake Coin Problem");
@@ -112,13 +59,19 @@ pub fn main(init: std.process.Init) !void {
 
     rl.setTargetFPS(60);
 
+    rg.setStyle(.default, .{ .default = .text_size }, 20);
+
     camera.offset.x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2;
     camera.offset.y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2;
 
     defer nodes.deinit(init.gpa);
     defer ui_bounds.deinit(init.gpa);
 
-    try ui_bounds.put(init.gpa, "add_100", .init(10, 10, 120, 30));
+    // Add UI element locations
+    try ui_bounds.put(init.gpa, "add_many", .init(10, 10, 120, 30));
+    try ui_bounds.put(init.gpa, "show_faulty", .init(10, 50, 20, 20));
+    try ui_bounds.put(init.gpa, "solve", .init(10, 80, 120, 30));
+    try ui_bounds.put(init.gpa, "node_count", .init(10, 120, 200, 20));
 
     texture = blk: {
         const img = try rl.loadImageFromMemory(".png", server_tex_file);
@@ -157,6 +110,13 @@ pub fn main(init: std.process.Init) !void {
         }
 
         if (!hovering_ui) {
+            if (rl.isKeyReleased(.x)) {
+                nodes.sortByX(0, nodes.array_list.items.len);
+            }
+
+            if (rl.isKeyReleased(.y)) {
+                nodes.sortByY(0, nodes.array_list.items.len);
+            }
 
             // Check for camera drag
             if (rl.isKeyPressed(.space) or rl.isMouseButtonPressed(.middle)) {
@@ -195,20 +155,13 @@ pub fn main(init: std.process.Init) !void {
 
             // Mark Node
             if (selected_idx != null and rl.isMouseButtonReleased(.left)) {
-                //
+                nodes.setFaulty(selected_idx.?);
             }
 
             // Delete Nodes
             if (selected_idx != null and rl.isMouseButtonReleased(.right)) {
                 nodes.remove(selected_idx.?);
-            }
-
-            if (rl.isKeyReleased(.x)) {
-                nodes.sortByX();
-            }
-
-            if (rl.isKeyReleased(.y)) {
-                nodes.sortByY();
+                selected_idx = null;
             }
         }
 
@@ -246,29 +199,67 @@ pub fn main(init: std.process.Init) !void {
                 const dest_rect: rl.Rectangle = .init(node.x, node.y, 32, 32);
                 rl.drawTexturePro(texture, texture_frames.base, dest_rect, texture_orig, camera.rotation, .white);
 
-                const idx_text = try std.fmt.allocPrintSentinel(frame_alloc, "{d}", .{i}, 0);
-                rl.drawText(idx_text, @trunc(dest_rect.x - 16), @trunc(dest_rect.y - 26), 10, .gray);
-
                 if (selected_idx != null and selected_idx.? == i) {
                     rl.drawTexturePro(texture, texture_frames.hover, dest_rect, texture_orig, camera.rotation, colors.hover);
+                }
+
+                // Show faulty node
+                if (node.faulty and show_faulty) {
+                    rl.drawTexturePro(texture, texture_frames.highlight, dest_rect, texture_orig, camera.rotation, colors.faulty);
+                }
+            }
+
+            // Debug text, put here to batch drawing properly
+            if (builtin.mode == .Debug) {
+                for (nodes.array_list.items, 0..) |node, i| {
+                    const dest_rect: rl.Rectangle = .init(node.x, node.y, 32, 32);
+                    const idx_text = try std.fmt.allocPrintSentinel(frame_alloc, "{d}", .{i}, 0);
+                    rl.drawText(idx_text, @trunc(dest_rect.x - 16), @trunc(dest_rect.y - 26), @trunc(10 / camera.zoom), .magenta);
                 }
             }
 
             camera.end();
         }
 
-        const mouse_pos_text = try std.fmt.allocPrintSentinel(
-            frame_alloc,
-            "Mouse pos: {d:.2}, {d:.2}",
-            .{ mouse_pos_world.x, mouse_pos_world.y },
-            0,
-        );
-
-        rl.drawText(mouse_pos_text, 100, 120, 10, .gray);
-
-        if (rg.button(ui_bounds.get("add_100").?, "Add 100")) {
-            //
+        if (rg.button(ui_bounds.get("add_many").?, "Add 50")) {
+            const to_place = 50;
+            var placed: u32 = 0;
+            var radius: f32 = last_spread_radius - 8;
+            while (placed < to_place) {
+                radius += 8;
+                const it_max = to_place - placed;
+                for (0..it_max) |_| {
+                    const rand_x: f32 = @floatFromInt(rng.intRangeAtMost(
+                        i32,
+                        @trunc(camera.target.x - radius),
+                        @trunc(camera.target.x + radius),
+                    ));
+                    const rand_y: f32 = @floatFromInt(rng.intRangeAtMost(
+                        i32,
+                        @trunc(camera.target.y - radius),
+                        @trunc(camera.target.y + radius),
+                    ));
+                    if (nodes.findAtPos(rand_x, rand_y, 32)) |_| {
+                        continue;
+                    } else {
+                        placed += 1;
+                        try nodes.append(init.gpa, .init(rand_x, rand_y));
+                    }
+                }
+            }
+            // last_spread_radius = @max(last_spread_radius, radius);
+            nodes.sortByX(0, nodes.array_list.items.len);
         }
+
+        _ = rg.checkBox(ui_bounds.get("show_faulty").?, "Show Faulty Node", &show_faulty);
+
+        if (rg.button(ui_bounds.get("solve").?, "Find Faulty")) {
+            nodes.sortByX(0, nodes.array_list.items.len);
+            _ = solver.solve(&nodes);
+        }
+
+        const node_count_text = try std.fmt.allocPrintSentinel(frame_alloc, "Node count: {d}", .{nodes.array_list.items.len}, 0);
+        _ = rg.label(ui_bounds.get("node_count").?, node_count_text);
 
         _ = frame_arena.reset(.retain_capacity);
     }

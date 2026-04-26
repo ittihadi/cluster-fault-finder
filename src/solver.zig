@@ -1,43 +1,31 @@
+const std = @import("std");
 const rl = @import("raylib");
+const NodeCollection = @import("NodeCollection.zig");
 
-pub const ScaleState = enum { balanced, left_leaning, right_leaning };
-pub const CoinState = enum { unknown, safe, counterfeit };
-pub const CounterfeitCoinType = enum { heavier, lighter, unknown };
-
-pub const Coin = struct {
-    //
+pub const NodeState = enum { neutral, suspect_a, suspect_b, safe, counterfeit };
+pub const SolveStep = struct {
+    id: u32,
+    step: union(enum(u8)) {
+        found_at_index: usize,
+    },
 };
-
-const SolverState = union(enum(u8)) {
-    start = null,
-};
-
-pub fn solveKnown(coins: []const Coin, counterfeit_type: CounterfeitCoinType) void {
-    _ = coins;
-    _ = counterfeit_type;
-    const state: SolverState = .start;
-    while (true) {
-        switch (state) {
-            .start => {
-                unreachable;
-            },
-            else => unreachable,
-        }
-    }
-}
-
-pub const NodeState = enum { neutral, processing, safe, counterfeit };
 
 pub const Node = struct {
     x: f32,
     y: f32,
     state: NodeState,
+    faulty: bool,
 
     pub fn toVec(self: Node) rl.Vector2 {
         return .init(self.x, self.y);
     }
 
     pub fn init(x: f32, y: f32) Node {
-        return .{ .x = x, .y = y, .state = .neutral };
+        return .{ .x = x, .y = y, .state = .neutral, .faulty = false };
     }
 };
+
+pub fn solve(nodes: *NodeCollection) []SolveStep {
+    _ = nodes;
+    return &[0]SolveStep{};
+}
