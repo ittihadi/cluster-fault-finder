@@ -30,9 +30,8 @@ This problem will be solved using the
    on the top left of the screen
 4. You will be taken to the visualization screen, use the `Play` button to see
    the solution step by step
+   - Use the `Close` button to go back into the setup screen
    - Use the `Pause` button to pause the playback
-   - Use the `Rewind` button to go to the beginning of the solution
-   - Use the `Skip` button to go to the end of the solution
    - Use the `Back` button to go back a step
    - Use the `Forward` button to go forward a step
 
