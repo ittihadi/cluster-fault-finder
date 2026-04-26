@@ -238,33 +238,48 @@ pub fn main(init: std.process.Init) !void {
             // Draw all nodes
             for (nodes.array_list.items, 0..) |node, i| {
                 const dest_rect: rl.Rectangle = .init(node.x, node.y, 32, 32);
-                rl.drawTexturePro(texture, texture_frames.base, dest_rect, texture_orig, camera.rotation, .white);
+                if (setup_mode) {
+                    rl.drawTexturePro(texture, texture_frames.base, dest_rect, texture_orig, camera.rotation, .white);
 
-                if (selected_idx != null and selected_idx.? == i) {
-                    rl.drawTexturePro(texture, texture_frames.hover, dest_rect, texture_orig, camera.rotation, colors.hover);
+                    if (selected_idx != null and selected_idx.? == i) {
+                        rl.drawTexturePro(texture, texture_frames.hover, dest_rect, texture_orig, camera.rotation, colors.hover);
+                    }
+
+                    // Show faulty node
+                    if (node.faulty and show_faulty and setup_mode) {
+                        rl.drawTexturePro(texture, texture_frames.highlight, dest_rect, texture_orig, camera.rotation, colors.faulty);
+                    }
                 }
-
-                // Show faulty node
-                if (node.faulty and show_faulty and setup_mode) {
-                    rl.drawTexturePro(texture, texture_frames.highlight, dest_rect, texture_orig, camera.rotation, colors.faulty);
-                }
-
                 // Show state
-                if (!setup_mode and node.state != .neutral) {
+                else {
                     rl.drawTexturePro(
                         texture,
-                        texture_frames.highlight,
+                        texture_frames.base,
                         dest_rect,
                         texture_orig,
                         camera.rotation,
                         switch (node.state) {
-                            .counterfeit => colors.faulty,
-                            .safe => colors.safe,
-                            .suspect_a => colors.suspect_a,
-                            .suspect_b => colors.suspect_b,
-                            else => unreachable,
+                            .safe => rl.Color.init(0xbb, 0xbb, 0xbb, 0xff),
+                            else => rl.Color.white,
                         },
                     );
+
+                    if (node.state != .neutral) {
+                        rl.drawTexturePro(
+                            texture,
+                            texture_frames.highlight,
+                            dest_rect,
+                            texture_orig,
+                            camera.rotation,
+                            switch (node.state) {
+                                .counterfeit => colors.faulty,
+                                .safe => colors.safe,
+                                .suspect_a => colors.suspect_a,
+                                .suspect_b => colors.suspect_b,
+                                else => unreachable,
+                            },
+                        );
+                    }
                 }
             }
 
@@ -435,12 +450,19 @@ fn setupVisualizer(gpa: std.mem.Allocator, rng: std.Random) !void {
     gpa.free(visualizer.step_frame_mapping);
     visualizer.step_frame_mapping = try gpa.alloc(u32, solve_steps.len);
 
+    // Reset all states
+    for (nodes.array_list.items) |*node| {
+        node.state = .neutral;
+    }
+
     // Setup step -> frame mapping
     const startup_padding: u32 = 30;
     var current_frame = startup_padding;
     var current_step: usize = 0;
     var current_comparison_size: usize = 0;
     const fast_comparison_thresh = 30;
+    const really_fast_comparison_thresh = 60;
+    var sub_frame_counter: u32 = 0;
 
     while (current_step < solve_steps.len) : (current_step += 1) {
         const curr = solve_steps[current_step];
@@ -456,12 +478,28 @@ fn setupVisualizer(gpa: std.mem.Allocator, rng: std.Random) !void {
             .change_state => |change| {
                 switch (change.to) {
                     .safe, .neutral, .counterfeit => {
+                        if (current_comparison_size < 10) {
+                            current_frame += 1;
+                        } else {
+                            sub_frame_counter += 1;
+                            if (sub_frame_counter >= 10) {
+                                sub_frame_counter = 0;
+                                current_frame += 1;
+                            }
+                        }
+
                         if (next.id > curr.id) {
                             current_frame += 20;
                         }
                     },
                     .suspect_a, .suspect_b => {
-                        if (current_comparison_size >= fast_comparison_thresh) {
+                        if (current_comparison_size >= really_fast_comparison_thresh) {
+                            sub_frame_counter += 1;
+                            if (sub_frame_counter >= 20) {
+                                sub_frame_counter = 0;
+                                current_frame += 1;
+                            }
+                        } else if (current_comparison_size >= fast_comparison_thresh) {
                             current_frame += 1;
                         } else {
                             current_frame += 6;
@@ -471,6 +509,10 @@ fn setupVisualizer(gpa: std.mem.Allocator, rng: std.Random) !void {
             },
             .found_at_index => {},
             .incorrect_input => unreachable,
+        }
+
+        if (curr.id != next.id) {
+            sub_frame_counter = 0;
         }
     }
 }
