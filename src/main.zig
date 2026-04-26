@@ -38,12 +38,18 @@ var drag_mode = false;
 var press_position: rl.Vector2 = .zero();
 var show_faulty = true;
 var show_welcome_screen = true;
+var show_help_screen = false;
 var setup_mode = true;
-
-var last_spread_radius: f32 = 0;
 
 var ui_bounds: std.array_hash_map.String(rl.Rectangle) = .empty;
 var solve_steps: []solver.SolveStep = &.{};
+
+const visualization = struct {
+    pub var playing = false;
+    pub var current_frame: u32 = 0;
+    pub var next_step: u32 = 0;
+    pub var step_frame_bounds: []u32 = &.{};
+};
 
 pub fn main(init: std.process.Init) !void {
     var frame_arena: std.heap.ArenaAllocator = .init(init.gpa);
@@ -62,6 +68,7 @@ pub fn main(init: std.process.Init) !void {
     rl.setTargetFPS(60);
 
     rg.setStyle(.default, .{ .default = .text_size }, 20);
+    rg.setIconScale(2);
 
     camera.offset.x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2;
     camera.offset.y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2;
@@ -72,9 +79,17 @@ pub fn main(init: std.process.Init) !void {
 
     // Add UI element locations
     try ui_bounds.put(init.gpa, "add_many", .init(10, 10, 120, 30));
-    try ui_bounds.put(init.gpa, "show_faulty", .init(10, 50, 20, 20));
-    try ui_bounds.put(init.gpa, "solve", .init(10, 80, 120, 30));
-    try ui_bounds.put(init.gpa, "node_count", .init(10, 120, 200, 20));
+    try ui_bounds.put(init.gpa, "show_faulty", .init(140, 15, 20, 20));
+    try ui_bounds.put(init.gpa, "solve", .init(10, 50, 120, 30));
+    try ui_bounds.put(init.gpa, "node_count", .init(140, 55, 200, 20));
+    try ui_bounds.put(init.gpa, "cant_solve", .init(10, 90, 330, 60));
+
+    try ui_bounds.put(init.gpa, "sim_back", .init(10, 10, 30, 30));
+    try ui_bounds.put(init.gpa, "sim_play_pause", .init(50, 10, 30, 30));
+    try ui_bounds.put(init.gpa, "sim_forward", .init(90, 10, 30, 30));
+    try ui_bounds.put(init.gpa, "sim_node_count", .init(10, 50, 240, 30));
+    try ui_bounds.put(init.gpa, "sim_step", .init(130, 90, 240, 30));
+    try ui_bounds.put(init.gpa, "sim_frame", .init(130, 130, 240, 30));
 
     texture = blk: {
         const img = try rl.loadImageFromMemory(".png", server_tex_file);
@@ -113,14 +128,6 @@ pub fn main(init: std.process.Init) !void {
         }
 
         if (!hovering_ui) {
-            if (rl.isKeyReleased(.x)) {
-                nodes.sortByX(0, nodes.count());
-            }
-
-            if (rl.isKeyReleased(.y)) {
-                nodes.sortByY(0, nodes.count());
-            }
-
             // Check for camera drag
             if (rl.isKeyPressed(.space) or rl.isMouseButtonPressed(.middle)) {
                 drag_mode = true;
@@ -146,25 +153,28 @@ pub fn main(init: std.process.Init) !void {
                 press_position = mouse_pos_world;
             }
 
-            // Get current node
-            selected_idx = nodes.findAtPos(mouse_pos_world.x, mouse_pos_world.y, 24);
+            if (setup_mode) {
+                // Get current node
+                selected_idx = nodes.findAtPos(mouse_pos_world.x, mouse_pos_world.y, 24);
 
-            // Place Nodes
-            if (selected_idx == null and rl.isMouseButtonReleased(.left) and
-                press_position.distanceSqr(mouse_pos_world) < press_thresh * press_thresh)
-            {
-                try nodes.append(init.gpa, .init(mouse_pos_world.x, mouse_pos_world.y));
-            }
+                // Place Nodes
+                if (selected_idx == null and rl.isMouseButtonReleased(.left) and
+                    press_position.distanceSqr(mouse_pos_world) < press_thresh * press_thresh)
+                {
+                    try nodes.append(init.gpa, .init(mouse_pos_world.x, mouse_pos_world.y));
+                }
 
-            // Mark Node
-            if (selected_idx != null and rl.isMouseButtonReleased(.left)) {
-                nodes.setFaulty(selected_idx.?);
-            }
+                // Mark Node
+                if (selected_idx != null and rl.isMouseButtonReleased(.left)) {
+                    nodes.setFaulty(selected_idx.?);
+                    std.debug.print("Set node {d} as faulty\n", .{selected_idx.?});
+                }
 
-            // Delete Nodes
-            if (selected_idx != null and rl.isMouseButtonReleased(.right)) {
-                nodes.remove(selected_idx.?);
-                selected_idx = null;
+                // Delete Nodes
+                if (selected_idx != null and rl.isMouseButtonReleased(.right)) {
+                    nodes.remove(selected_idx.?);
+                    selected_idx = null;
+                }
             }
         }
 
@@ -207,9 +217,33 @@ pub fn main(init: std.process.Init) !void {
                 }
 
                 // Show faulty node
-                if (node.faulty and show_faulty) {
+                if (node.faulty and show_faulty and setup_mode) {
                     rl.drawTexturePro(texture, texture_frames.highlight, dest_rect, texture_orig, camera.rotation, colors.faulty);
                 }
+
+                // Show state
+                if (!setup_mode and node.state != .neutral) {
+                    rl.drawTexturePro(
+                        texture,
+                        texture_frames.highlight,
+                        dest_rect,
+                        texture_orig,
+                        camera.rotation,
+                        switch (node.state) {
+                            .counterfeit => colors.faulty,
+                            .safe => colors.safe,
+                            .suspect_a => colors.suspect_1,
+                            .suspect_b => colors.suspect_2,
+                            else => unreachable,
+                        },
+                    );
+                }
+            }
+
+            // Preview placement
+            if (selected_idx == null and !hovering_ui) {
+                const dest_rect: rl.Rectangle = .init(mouse_pos_world.x, mouse_pos_world.y, 32, 32);
+                rl.drawTexturePro(texture, texture_frames.base, dest_rect, texture_orig, camera.rotation, .init(0xff, 0xff, 0xff, 0x55));
             }
 
             // Debug text, put here to batch drawing properly
@@ -224,60 +258,118 @@ pub fn main(init: std.process.Init) !void {
             camera.end();
         }
 
-        if (rg.button(ui_bounds.get("add_many").?, "Add 50")) {
-            const to_place = 50;
-            var placed: u32 = 0;
-            var radius: f32 = last_spread_radius - 8;
-            while (placed < to_place) {
-                radius += 8;
-                const it_max = to_place - placed;
-                for (0..it_max) |_| {
-                    const rand_x: f32 = @floatFromInt(rng.intRangeAtMost(
-                        i32,
-                        @trunc(camera.target.x - radius),
-                        @trunc(camera.target.x + radius),
-                    ));
-                    const rand_y: f32 = @floatFromInt(rng.intRangeAtMost(
-                        i32,
-                        @trunc(camera.target.y - radius),
-                        @trunc(camera.target.y + radius),
-                    ));
-                    if (nodes.findAtPos(rand_x, rand_y, 32)) |_| {
-                        continue;
-                    } else {
-                        placed += 1;
-                        try nodes.append(init.gpa, .init(rand_x, rand_y));
+        // Draw UI
+
+        // Setup UI
+        if (setup_mode) {
+            if (rg.button(ui_bounds.get("add_many").?, "Add 50")) {
+                const to_place = 50;
+                var placed: u32 = 0;
+                var radius: f32 = 0;
+                while (placed < to_place) {
+                    radius += 8;
+                    const it_max = to_place - placed;
+                    for (0..it_max) |_| {
+                        const rand_x: f32 = @floatFromInt(rng.intRangeAtMost(
+                            i32,
+                            @trunc(camera.target.x - radius),
+                            @trunc(camera.target.x + radius),
+                        ));
+                        const rand_y: f32 = @floatFromInt(rng.intRangeAtMost(
+                            i32,
+                            @trunc(camera.target.y - radius),
+                            @trunc(camera.target.y + radius),
+                        ));
+                        if (nodes.findAtPos(rand_x, rand_y, 32)) |_| {
+                            continue;
+                        } else {
+                            placed += 1;
+                            try nodes.append(init.gpa, .init(rand_x, rand_y));
+                        }
                     }
                 }
+                nodes.sortByX(0, nodes.count());
             }
-            // last_spread_radius = @max(last_spread_radius, radius);
-            nodes.sortByX(0, nodes.count());
-        }
 
-        _ = rg.checkBox(ui_bounds.get("show_faulty").?, "Show Faulty Node", &show_faulty);
+            _ = rg.checkBox(ui_bounds.get("show_faulty").?, "Show Faulty Node", &show_faulty);
 
-        if (rg.button(ui_bounds.get("solve").?, "Find Faulty")) {
-            init.gpa.free(solve_steps);
-            nodes.sortByX(0, nodes.count());
-            solve_steps = try solver.solve(&nodes, init.gpa, 0, nodes.count(), 0);
+            const can_solve = nodes.count() > 1 and hasFaultyNode();
 
-            for (solve_steps) |step| {
-                switch (step.step) {
-                    .change_state => |state_change| {
-                        std.debug.print(
-                            "Step: {d}, change node {d} state from {s} to {s}\n",
-                            .{ step.id, state_change.index, @tagName(state_change.from), @tagName(state_change.to) },
-                        );
-                    },
-                    .found_at_index => |idx| std.debug.print("Step: {d} found faulty node at: {d}\n", .{ step.id, idx }),
-                    else => {},
-                }
+            if (!can_solve) {
+                const prev = rg.getStyle(.default, .{ .control = .text_color_normal });
+                rg.setStyle(.default, .{ .control = .text_color_normal }, colors.faulty.toInt());
+                _ = rg.label(ui_bounds.get("cant_solve").?, "Please ensure at least two nodes\nexist and that one is marked\nfaulty");
+                rg.setStyle(.default, .{ .control = .text_color_normal }, prev);
+                rg.disable();
             }
-        }
 
-        const node_count_text = try std.fmt.allocPrintSentinel(frame_alloc, "Node count: {d}", .{nodes.count()}, 0);
-        _ = rg.label(ui_bounds.get("node_count").?, node_count_text);
+            if (rg.button(ui_bounds.get("solve").?, "Find Faulty")) {
+                init.gpa.free(solve_steps);
+                nodes.sortByX(0, nodes.count());
+                solve_steps = try solver.solve(&nodes, init.gpa, 0, nodes.count(), 0);
+
+                // for (solve_steps) |step| {
+                //     switch (step.step) {
+                //         .change_state => |state_change| {
+                //             std.debug.print(
+                //                 "Step: {d}, change node {d} state from {s} to {s}\n",
+                //                 .{ step.id, state_change.index, @tagName(state_change.from), @tagName(state_change.to) },
+                //             );
+                //             // for the time being
+                //             nodes.array_list.items[state_change.index].state = state_change.to;
+                //         },
+                //         .found_at_index => |idx| {
+                //             std.debug.print("Step: {d} found faulty node at: {d}\n", .{ step.id, idx });
+                //             nodes.array_list.items[idx].state = .counterfeit;
+                //         },
+                //         else => unreachable,
+                //     }
+                // }
+                setup_mode = false;
+            }
+
+            if (!can_solve) {
+                rg.enable();
+            }
+
+            const node_count_text = try std.fmt.allocPrintSentinel(frame_alloc, "Node count: {d}", .{nodes.count()}, 0);
+            _ = rg.label(ui_bounds.get("node_count").?, node_count_text);
+        }
+        // Simulation/Visualization UI
+        else {
+            const sim_back = ui_bounds.get("sim_back").?;
+            if (rg.button(sim_back, rg.iconText(@intFromEnum(rg.IconName.player_previous), ""))) {
+                //
+            }
+
+            const sim_toggle = ui_bounds.get("sim_play_pause").?;
+            const icon = if (visualization.playing) @intFromEnum(rg.IconName.player_pause) else @intFromEnum(rg.IconName.player_play);
+            if (rg.button(sim_toggle, rg.iconText(icon, ""))) {
+                //
+            }
+
+            const sim_forward = ui_bounds.get("sim_forward").?;
+            if (rg.button(sim_forward, rg.iconText(@intFromEnum(rg.IconName.player_next), ""))) {
+                //
+            }
+
+            const sim_node_count = ui_bounds.get("sim_node_count").?;
+            _ = sim_node_count;
+            const sim_step = ui_bounds.get("sim_step").?;
+            _ = sim_step;
+            const sim_frame = ui_bounds.get("sim_frame").?;
+            _ = sim_frame;
+        }
 
         _ = frame_arena.reset(.retain_capacity);
     }
+}
+
+fn hasFaultyNode() bool {
+    for (nodes.array_list.items) |item| {
+        if (item.faulty) {
+            return true;
+        }
+    }
+    return false;
 }
