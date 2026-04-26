@@ -7,8 +7,13 @@ pub const NodeState = enum { neutral, suspect_a, suspect_b, safe, counterfeit };
 pub const SolveStep = struct {
     id: u32,
     step: union(enum(u8)) {
-        unsolvable: void,
+        incorrect_input: void,
         found_at_index: usize,
+        change_state: struct {
+            index: usize,
+            from: NodeState,
+            to: NodeState,
+        },
     },
 };
 
@@ -33,7 +38,7 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
 
     const count = end - start;
     if (count == 1) {
-        try steps.append(gpa, .{ .id = step, .step = .unsolvable });
+        try steps.append(gpa, .{ .id = step, .step = .incorrect_input });
         return steps.toOwnedSlice(gpa);
     }
 
@@ -45,36 +50,127 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
     const lhs = nodes.array_list.items[start .. start + check_group_size];
     const rhs = nodes.array_list.items[start + check_group_size .. start + check_group_size + check_group_size];
 
-    const res = compare(lhs, rhs);
-    // TODO: Record comparison steps
+    // Record steps
+    for (lhs, start..) |node, i| {
+        try steps.append(gpa, .{ .id = step, .step = .{ .change_state = .{ .index = i, .from = node.state, .to = .suspect_a } } });
+    }
+    for (rhs, (start + check_group_size)..) |node, i| {
+        try steps.append(gpa, .{ .id = step, .step = .{ .change_state = .{ .index = i, .from = node.state, .to = .suspect_b } } });
+    }
+
+    const res: CompareResult = compare(lhs, rhs);
+
+    // Record steps
+    switch (res) {
+        .equal => {
+            // Mark first group safe
+            for (lhs, start..) |node, i| {
+                try steps.append(gpa, .{
+                    .id = step + 1,
+                    .step = .{ .change_state = .{ .index = i, .from = node.state, .to = .safe } },
+                });
+            }
+            // Mark second group safe
+            for (rhs, (start + check_group_size)..) |node, i| {
+                try steps.append(gpa, .{
+                    .id = step + 1,
+                    .step = .{ .change_state = .{ .index = i, .from = node.state, .to = .safe } },
+                });
+            }
+        },
+        .left_slower => {
+            // Mark second group safe
+            for (rhs, (start + check_group_size)..) |node, i| {
+                try steps.append(gpa, .{
+                    .id = step + 1,
+                    .step = .{ .change_state = .{ .index = i, .from = node.state, .to = .safe } },
+                });
+            }
+            // Mark third group safe
+            const rest = nodes.array_list.items[start + check_group_size + check_group_size .. end];
+            for (rest, start + check_group_size + check_group_size..) |node, i| {
+                try steps.append(gpa, .{
+                    .id = step + 1,
+                    .step = .{ .change_state = .{ .index = i, .from = node.state, .to = .safe } },
+                });
+            }
+        },
+        .right_slower => {
+            // Mark first group safe
+            for (lhs, start..) |node, i| {
+                try steps.append(gpa, .{
+                    .id = step + 1,
+                    .step = .{ .change_state = .{ .index = i, .from = node.state, .to = .safe } },
+                });
+            }
+            // Mark third group safe
+            const rest = nodes.array_list.items[start + check_group_size + check_group_size .. end];
+            for (rest, start + check_group_size + check_group_size..) |node, i| {
+                try steps.append(gpa, .{
+                    .id = step + 1,
+                    .step = .{ .change_state = .{ .index = i, .from = node.state, .to = .safe } },
+                });
+            }
+        },
+    }
 
     // Check base case
     if (count == 2) {
         switch (res) {
             // Shouldn't be able to happen if there has to be ONE faulty node
-            .equal => try steps.append(gpa, .{ .id = step + 1, .step = .unsolvable }),
+            .equal => try steps.append(gpa, .{ .id = step + 2, .step = .incorrect_input }),
             // Left node is faulty
-            .left_slower => try steps.append(gpa, .{ .id = step + 1, .step = .{ .found_at_index = start } }),
+            .left_slower => {
+                try steps.append(gpa, .{
+                    .id = step + 2,
+                    .step = .{ .change_state = .{ .index = start, .from = lhs[0].state, .to = .counterfeit } },
+                });
+                try steps.append(gpa, .{ .id = step + 2, .step = .{ .found_at_index = start } });
+            },
             // Right node is faulty
-            .right_slower => try steps.append(gpa, .{ .id = step + 1, .step = .{ .found_at_index = start + 1 } }),
+            .right_slower => {
+                try steps.append(gpa, .{
+                    .id = step + 2,
+                    .step = .{ .change_state = .{ .index = start + 1, .from = rhs[0].state, .to = .counterfeit } },
+                });
+
+                try steps.append(gpa, .{ .id = step + 2, .step = .{ .found_at_index = start + 1 } });
+            },
         }
     } else if (count == 3) {
         switch (res) {
             // Assume last node is faulty
-            .equal => try steps.append(gpa, .{ .id = step + 1, .step = .{ .found_at_index = start + 2 } }),
+            .equal => {
+                try steps.append(gpa, .{ .id = step + 2, .step = .{
+                    .change_state = .{ .index = start + 2, .from = nodes.array_list.items[start + 2].state, .to = .counterfeit },
+                } });
+                try steps.append(gpa, .{ .id = step + 2, .step = .{ .found_at_index = start + 2 } });
+            },
             // Left node is faulty
-            .left_slower => try steps.append(gpa, .{ .id = step + 1, .step = .{ .found_at_index = start } }),
+            .left_slower => {
+                try steps.append(gpa, .{
+                    .id = step + 2,
+                    .step = .{ .change_state = .{ .index = start, .from = lhs[0].state, .to = .counterfeit } },
+                });
+                try steps.append(gpa, .{ .id = step + 2, .step = .{ .found_at_index = start } });
+            },
             // Right node is faulty
-            .right_slower => try steps.append(gpa, .{ .id = step + 1, .step = .{ .found_at_index = start + 1 } }),
+            .right_slower => {
+                try steps.append(gpa, .{
+                    .id = step + 2,
+                    .step = .{ .change_state = .{ .index = start + 1, .from = rhs[0].state, .to = .counterfeit } },
+                });
+                try steps.append(gpa, .{ .id = step + 2, .step = .{ .found_at_index = start + 1 } });
+            },
         }
     } else {
         const more_steps = switch (res) {
             // Check the third group
-            .equal => try solve(nodes, gpa, start + check_group_size + check_group_size, end, step + 1),
+            .equal => try solve(nodes, gpa, start + check_group_size + check_group_size, end, step + 2),
             // Check the first group
-            .left_slower => try solve(nodes, gpa, start, start + check_group_size, step + 1),
+            .left_slower => try solve(nodes, gpa, start, start + check_group_size, step + 2),
             // Check the second group
-            .right_slower => try solve(nodes, gpa, start + check_group_size, start + check_group_size + check_group_size, step + 1),
+            .right_slower => try solve(nodes, gpa, start + check_group_size, start + check_group_size + check_group_size, step + 2),
         };
         try steps.appendSlice(gpa, more_steps);
         gpa.free(more_steps);

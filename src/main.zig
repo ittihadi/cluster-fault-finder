@@ -263,6 +263,12 @@ pub fn main(init: std.process.Init) !void {
 
             for (solve_steps) |step| {
                 switch (step.step) {
+                    .change_state => |state_change| {
+                        std.debug.print(
+                            "Step: {d}, change node {d} state from {s} to {s}\n",
+                            .{ step.id, state_change.index, @tagName(state_change.from), @tagName(state_change.to) },
+                        );
+                    },
                     .found_at_index => |idx| std.debug.print("Step: {d} found faulty node at: {d}\n", .{ step.id, idx }),
                     else => {},
                 }
