@@ -36,9 +36,15 @@ pub const Node = struct {
 pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: usize, step: u32) error{OutOfMemory}![]SolveStep {
     var steps: std.ArrayList(SolveStep) = .empty;
 
+    if (nodes.count() == 1) {
+        try steps.append(gpa, .{ .id = step, .step = .incorrect_input });
+        return steps.toOwnedSlice(gpa);
+    }
+
+    // Assume last node is counterfeit
     const count = end - start;
     if (count == 1) {
-        try steps.append(gpa, .{ .id = step, .step = .incorrect_input });
+        try recordStateChangeSlice(&steps, gpa, nodes.array_list.items[start..end], start, step, .counterfeit);
         return steps.toOwnedSlice(gpa);
     }
 
@@ -90,13 +96,8 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
                 switch (count) {
                     // Shouldn't be able to happen if there has to be ONE faulty node
                     2 => try steps.append(gpa, .{ .id = step + 2, .step = .incorrect_input }),
-                    // Assume the third node is faulty
-                    3 => {
-                        const rest = nodes.array_list.items[start + 2 .. end];
-                        try recordStateChangeSlice(&steps, gpa, rest, start + 2, step + 2, .counterfeit);
-                    },
                     // Do one more check
-                    4 => {
+                    3, 4 => {
                         // -- Actual recurse here --
                         const more_steps = try solve(nodes, gpa, start + 2, end, step + 2);
                         try steps.appendSlice(gpa, more_steps);
