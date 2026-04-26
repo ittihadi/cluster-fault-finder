@@ -188,20 +188,20 @@ pub fn main(init: std.process.Init) !void {
 
             if (visualizer.playing) {
                 visualizer.current_frame += 1;
-            }
 
-            var frame_bound = visualizer.step_frame_mapping[visualizer.next_step];
-            while (frame_bound <= visualizer.current_frame) {
-                applyStep(visualizer.next_step);
-                switch (solve_steps[visualizer.next_step].step) {
-                    .found_at_index => {
-                        visualizer.playing = false;
-                        break;
-                    },
-                    else => {
-                        visualizer.next_step += 1;
-                        frame_bound = visualizer.step_frame_mapping[visualizer.next_step];
-                    },
+                var frame_bound = visualizer.step_frame_mapping[visualizer.next_step];
+                while (frame_bound <= visualizer.current_frame) {
+                    applyStep(visualizer.next_step);
+                    switch (solve_steps[visualizer.next_step].step) {
+                        .found_at_index => {
+                            visualizer.playing = false;
+                            break;
+                        },
+                        else => {
+                            visualizer.next_step += 1;
+                            frame_bound = visualizer.step_frame_mapping[visualizer.next_step];
+                        },
+                    }
                 }
             }
         }
@@ -395,10 +395,27 @@ pub fn main(init: std.process.Init) !void {
 
             const sim_back = ui_bounds.get("sim_back").?;
             if (rg.button(sim_back, rg.iconText(@intFromEnum(rg.IconName.player_previous), ""))) {
-                if (visualizer.playing) {
-                    visualizer.playing = false;
+                visualizer.playing = false;
+
+                // So scuffed...
+                const initial_id = solve_steps[visualizer.next_step].id;
+                while (visualizer.next_step > 0) {
+                    unapplyStep(visualizer.next_step);
+                    visualizer.next_step -= 1;
+                    visualizer.current_frame = visualizer.step_frame_mapping[visualizer.next_step];
+                    const curr_step = solve_steps[visualizer.next_step];
+                    if (curr_step.id != initial_id) {
+                        // This has to happen *after* the shift otherwise there's an edge case where
+                        // it gains one
+                        if (curr_step.step == .start_compare) {
+                            visualizer.current_checks -= 1;
+                        }
+                        break;
+                    }
                 }
-                // Unapply current step
+                if (visualizer.next_step == 0) {
+                    visualizer.current_frame = 0;
+                }
             }
 
             const sim_toggle = ui_bounds.get("sim_play_pause").?;
@@ -409,10 +426,20 @@ pub fn main(init: std.process.Init) !void {
 
             const sim_forward = ui_bounds.get("sim_forward").?;
             if (rg.button(sim_forward, rg.iconText(@intFromEnum(rg.IconName.player_next), ""))) {
-                if (visualizer.playing) {
-                    visualizer.playing = false;
+                visualizer.playing = false;
+
+                // Not as scuffed
+                const initial_id = solve_steps[visualizer.next_step].id;
+                var curr_step = solve_steps[visualizer.next_step];
+                while (curr_step.id == initial_id) {
+                    applyStep(visualizer.next_step);
+                    visualizer.current_frame = visualizer.step_frame_mapping[visualizer.next_step];
+                    switch (curr_step.step) {
+                        .found_at_index => break,
+                        else => visualizer.next_step += 1,
+                    }
+                    curr_step = solve_steps[visualizer.next_step];
                 }
-                // Go to next step
             }
 
             const sim_node_count = ui_bounds.get("sim_node_count").?;
@@ -532,7 +559,7 @@ fn applyStep(step: usize) void {
 fn unapplyStep(step: usize) void {
     switch (solve_steps[step].step) {
         .compare_size, .found_at_index => {},
-        .start_compare => visualizer.current_checks -= 1,
+        .start_compare => {},
         .change_state => |change| {
             nodes.array_list.items[change.index].state = change.from;
         },
