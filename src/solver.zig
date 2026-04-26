@@ -47,6 +47,7 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
     const count = end - start;
     if (count == 1) {
         try recordStateChangeSlice(&steps, gpa, nodes.array_list.items[start..end], start, step, .counterfeit);
+        try steps.append(gpa, .{ .id = step, .step = .{ .found_at_index = start } });
         return steps.toOwnedSlice(gpa);
     }
 
@@ -168,7 +169,9 @@ fn recordStateChangeSlice(
     step: u32,
     to: NodeState,
 ) error{OutOfMemory}!void {
-    for (nodes, start_idx..) |node, i| {
+    for (nodes, start_idx..) |*node, i| {
         try steps.append(gpa, .{ .id = step, .step = .{ .change_state = .{ .index = i, .from = node.state, .to = to } } });
+        // This is bad, this should be somewhere else
+        node.state = to;
     }
 }
