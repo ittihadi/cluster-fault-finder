@@ -34,14 +34,16 @@ var floor: rl.Texture2D = undefined;
 var camera: rl.Camera2D = .{ .offset = .zero(), .rotation = 0, .target = .zero(), .zoom = 2 };
 var nodes: NodeCollection = .empty;
 
-var drag_mode: bool = false;
+var drag_mode = false;
 var press_position: rl.Vector2 = .zero();
-var show_faulty: bool = true;
-var show_welcome_screen: bool = true;
+var show_faulty = true;
+var show_welcome_screen = true;
+var setup_mode = true;
 
 var last_spread_radius: f32 = 0;
 
 var ui_bounds: std.array_hash_map.String(rl.Rectangle) = .empty;
+var solve_steps: []solver.SolveStep = &.{};
 
 pub fn main(init: std.process.Init) !void {
     var frame_arena: std.heap.ArenaAllocator = .init(init.gpa);
@@ -66,6 +68,7 @@ pub fn main(init: std.process.Init) !void {
 
     defer nodes.deinit(init.gpa);
     defer ui_bounds.deinit(init.gpa);
+    defer init.gpa.free(solve_steps);
 
     // Add UI element locations
     try ui_bounds.put(init.gpa, "add_many", .init(10, 10, 120, 30));
@@ -111,11 +114,11 @@ pub fn main(init: std.process.Init) !void {
 
         if (!hovering_ui) {
             if (rl.isKeyReleased(.x)) {
-                nodes.sortByX(0, nodes.array_list.items.len);
+                nodes.sortByX(0, nodes.count());
             }
 
             if (rl.isKeyReleased(.y)) {
-                nodes.sortByY(0, nodes.array_list.items.len);
+                nodes.sortByY(0, nodes.count());
             }
 
             // Check for camera drag
@@ -248,17 +251,25 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
             // last_spread_radius = @max(last_spread_radius, radius);
-            nodes.sortByX(0, nodes.array_list.items.len);
+            nodes.sortByX(0, nodes.count());
         }
 
         _ = rg.checkBox(ui_bounds.get("show_faulty").?, "Show Faulty Node", &show_faulty);
 
         if (rg.button(ui_bounds.get("solve").?, "Find Faulty")) {
-            nodes.sortByX(0, nodes.array_list.items.len);
-            _ = solver.solve(&nodes);
+            init.gpa.free(solve_steps);
+            nodes.sortByX(0, nodes.count());
+            solve_steps = try solver.solve(&nodes, init.gpa, 0, nodes.count(), 0);
+
+            for (solve_steps) |step| {
+                switch (step.step) {
+                    .found_at_index => |idx| std.debug.print("Step: {d} found faulty node at: {d}\n", .{ step.id, idx }),
+                    else => {},
+                }
+            }
         }
 
-        const node_count_text = try std.fmt.allocPrintSentinel(frame_alloc, "Node count: {d}", .{nodes.array_list.items.len}, 0);
+        const node_count_text = try std.fmt.allocPrintSentinel(frame_alloc, "Node count: {d}", .{nodes.count()}, 0);
         _ = rg.label(ui_bounds.get("node_count").?, node_count_text);
 
         _ = frame_arena.reset(.retain_capacity);

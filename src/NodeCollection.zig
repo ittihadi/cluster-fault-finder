@@ -66,3 +66,7 @@ pub fn setFaulty(self: *NodeCollection, idx: usize) void {
     }
     self.array_list.items[idx].faulty = true;
 }
+
+pub fn count(self: *const NodeCollection) usize {
+    return self.array_list.items.len;
+}
