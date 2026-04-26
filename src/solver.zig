@@ -14,6 +14,8 @@ pub const SolveStep = struct {
             from: NodeState,
             to: NodeState,
         },
+        start_compare: void,
+        compare_size: usize,
     },
 };
 
@@ -55,10 +57,14 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
 
     const lhs = nodes.array_list.items[start .. start + check_group_size];
     const rhs = nodes.array_list.items[start + check_group_size .. start + check_group_size + check_group_size];
+    const rem = nodes.array_list.items[start + check_group_size + check_group_size .. end];
 
     // Record steps
+    try steps.append(gpa, .{ .id = step, .step = .{ .compare_size = check_group_size } });
     try recordStateChangeSlice(&steps, gpa, lhs, start, step, .suspect_a);
     try recordStateChangeSlice(&steps, gpa, rhs, start + check_group_size, step, .suspect_b);
+    try recordStateChangeSlice(&steps, gpa, rem, start + check_group_size + check_group_size, step, .neutral);
+    try steps.append(gpa, .{ .id = step, .step = .start_compare });
 
     const res: CompareResult = compare(lhs, rhs);
 
@@ -76,16 +82,14 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
             try recordStateChangeSlice(&steps, gpa, rhs, start + check_group_size, step + 1, .safe);
 
             // Mark third group safe
-            const rest = nodes.array_list.items[start + check_group_size + check_group_size .. end];
-            try recordStateChangeSlice(&steps, gpa, rest, start + check_group_size + check_group_size, step + 1, .safe);
+            try recordStateChangeSlice(&steps, gpa, rem, start + check_group_size + check_group_size, step + 1, .safe);
         },
         .right_slower => {
             // Mark first group safe
             try recordStateChangeSlice(&steps, gpa, lhs, start, step + 1, .safe);
 
             // Mark third group safe
-            const rest = nodes.array_list.items[start + check_group_size + check_group_size .. end];
-            try recordStateChangeSlice(&steps, gpa, rest, start + check_group_size + check_group_size, step + 1, .safe);
+            try recordStateChangeSlice(&steps, gpa, rem, start + check_group_size + check_group_size, step + 1, .safe);
         },
     }
 
