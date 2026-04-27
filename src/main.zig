@@ -472,7 +472,7 @@ pub fn main(init: std.process.Init) !void {
         // Simulation/Visualization UI
         else if (!setup_mode and !show_welcome_screen and !show_help_screen) {
             const sim_exit = ui_bounds.get("sim_exit").?;
-            if (rg.button(sim_exit, rg.iconText(@intFromEnum(rg.IconName.cross), ""))) {
+            if (rg.button(sim_exit, rg.iconText(@intFromEnum(rg.IconName.cross_small), ""))) {
                 visualizer.playing = false;
                 setup_mode = true;
             }
