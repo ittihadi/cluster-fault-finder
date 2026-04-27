@@ -55,7 +55,7 @@ const visualizer = struct {
 
 pub fn main(init: std.process.Init) !void {
     rl.setConfigFlags(.{ .window_resizable = true });
-    rl.initWindow(1280, 720, "Fake Coin Problem");
+    rl.initWindow(1280, 720, "Cluster Fault Finder Simulator");
     defer rl.closeWindow();
 
     rl.setTargetFPS(60);
