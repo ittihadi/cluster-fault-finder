@@ -51,6 +51,7 @@ const visualizer = struct {
     /// Maps which frame a single step (single instance in a group) happens
     pub var step_frame_mapping: []u32 = &.{};
     pub var current_checks: u32 = 0;
+    pub var playback_speed: u8 = 1;
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -90,6 +91,8 @@ pub fn main(init: std.process.Init) !void {
     try ui_bounds.put(init.gpa, "sim_back", .init(50, 10, 30, 30));
     try ui_bounds.put(init.gpa, "sim_play_pause", .init(90, 10, 30, 30));
     try ui_bounds.put(init.gpa, "sim_forward", .init(130, 10, 30, 30));
+    try ui_bounds.put(init.gpa, "sim_speedup", .init(170, 10, 30, 30));
+    try ui_bounds.put(init.gpa, "sim_speedup_label", .init(210, 10, 240, 30));
     try ui_bounds.put(init.gpa, "sim_node_count", .init(10, 50, 240, 20));
     try ui_bounds.put(init.gpa, "sim_check", .init(10, 80, 240, 20));
     try ui_bounds.put(init.gpa, "sim_frame", .init(10, 110, 240, 20));
@@ -211,7 +214,7 @@ pub fn main(init: std.process.Init) !void {
             }
 
             if (visualizer.playing and !show_help_screen) {
-                visualizer.current_frame += 1;
+                visualizer.current_frame += visualizer.playback_speed;
 
                 var frame_bound = visualizer.step_frame_mapping[visualizer.next_step];
                 while (frame_bound <= visualizer.current_frame) {
@@ -219,6 +222,8 @@ pub fn main(init: std.process.Init) !void {
                     switch (solve_steps[visualizer.next_step].step) {
                         .found_at_index => {
                             visualizer.playing = false;
+                            // Snap playback frame to frame mapping so it doesn't overshoot
+                            visualizer.current_frame = frame_bound;
                             break;
                         },
                         else => {
@@ -510,6 +515,21 @@ pub fn main(init: std.process.Init) !void {
             const sim_frame = ui_bounds.get("sim_frame").?;
             const node_frame_text = try std.fmt.allocPrintSentinel(frame_alloc, "Current Frame: {d}", .{visualizer.current_frame}, 0);
             _ = rg.label(sim_frame, node_frame_text);
+
+            const sim_speedup = ui_bounds.get("sim_speedup").?;
+            if (rg.button(sim_speedup, rg.iconText(@intFromEnum(rg.IconName.sand_timer), ""))) {
+                visualizer.playback_speed = switch (visualizer.playback_speed) {
+                    1 => 2,
+                    2 => 4,
+                    4 => 8,
+                    8 => 1,
+                    else => unreachable,
+                };
+            }
+
+            const sim_speedup_label = ui_bounds.get("sim_speedup_label").?;
+            const playback_speed_text = try std.fmt.allocPrintSentinel(frame_alloc, "Speed: {d}x", .{visualizer.playback_speed}, 0);
+            _ = rg.label(sim_speedup_label, playback_speed_text);
         }
 
         if (show_help_screen) {
