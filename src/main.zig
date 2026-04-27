@@ -95,7 +95,7 @@ pub fn main(init: std.process.Init) !void {
     try ui_bounds.put(init.gpa, "sim_speedup_label", .init(210, 10, 240, 30));
     try ui_bounds.put(init.gpa, "sim_node_count", .init(10, 50, 240, 20));
     try ui_bounds.put(init.gpa, "sim_check", .init(10, 80, 240, 20));
-    try ui_bounds.put(init.gpa, "sim_frame", .init(10, 110, 240, 20));
+    try ui_bounds.put(init.gpa, "sim_time", .init(10, 110, 240, 20));
 
     try ui_bounds.put(init.gpa, "info", .init(@floatFromInt(rl.getScreenWidth() - 40), 10, 30, 30));
 
@@ -512,9 +512,17 @@ pub fn main(init: std.process.Init) !void {
             const node_check_text = try std.fmt.allocPrintSentinel(frame_alloc, "Current Checks: {d}", .{visualizer.current_checks}, 0);
             _ = rg.label(sim_check, node_check_text);
 
-            const sim_frame = ui_bounds.get("sim_frame").?;
-            const node_frame_text = try std.fmt.allocPrintSentinel(frame_alloc, "Current Frame: {d}", .{visualizer.current_frame}, 0);
-            _ = rg.label(sim_frame, node_frame_text);
+            const sim_frame = ui_bounds.get("sim_time").?;
+            const sim_time_text = if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift))
+                try std.fmt.allocPrintSentinel(frame_alloc, "Current Frame: {d}", .{visualizer.current_frame}, 0)
+            else
+                try std.fmt.allocPrintSentinel(
+                    frame_alloc,
+                    "Current Time: {d:.2}s",
+                    .{@as(f32, @floatFromInt(visualizer.current_frame)) / 60},
+                    0,
+                );
+            _ = rg.label(sim_frame, sim_time_text);
 
             const sim_speedup = ui_bounds.get("sim_speedup").?;
             if (rg.button(sim_speedup, rg.iconText(@intFromEnum(rg.IconName.sand_timer), ""))) {
