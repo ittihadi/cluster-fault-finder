@@ -483,9 +483,9 @@ pub fn main(init: std.process.Init) !void {
             const center_x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2;
             const center_y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2;
             const panel_bounds: rl.Rectangle = if (setup_mode)
-                .init(center_x - 250, center_y - 110, 500, 220)
+                .init(center_x - 250, center_y - 120, 500, 240)
             else
-                .init(center_x - 250, center_y - 170, 500, 340);
+                .init(center_x - 250, center_y - 180, 500, 360);
             const panel_color = rg.getStyle(.default, .{ .default = .background_color });
             const text_color: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .text_color_normal })));
 
@@ -501,6 +501,7 @@ pub fn main(init: std.process.Init) !void {
                 \\- Remove nodes by Right clicking
                 \\- Move by holding Middle Mouse click or
                 \\  Space and dragging the screen
+                \\- Zoom using the scroll wheel
                 \\- Left click a node to mark it as faulty
             else
                 \\- Use the Close button to go back to setup
@@ -509,6 +510,7 @@ pub fn main(init: std.process.Init) !void {
                 \\  buttons to navigate around the simulation
                 \\- Move by holding Middle Mouse Button or
                 \\  Space and dragging the screen
+                \\- Zoom using the scroll wheel
                 \\Nodes are outlined the following way:
                 \\- Orange / Yellow - Groups being compared
                 \\- Red - Found faulty node
