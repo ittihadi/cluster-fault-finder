@@ -79,11 +79,12 @@ pub fn main(init: std.process.Init) !void {
     defer init.gpa.free(visualizer.step_frame_mapping);
 
     // Add UI element locations
-    try ui_bounds.put(init.gpa, "add_many", .init(10, 10, 120, 30));
-    try ui_bounds.put(init.gpa, "show_faulty", .init(140, 15, 20, 20));
-    try ui_bounds.put(init.gpa, "solve", .init(10, 50, 120, 30));
-    try ui_bounds.put(init.gpa, "node_count", .init(140, 55, 200, 20));
-    try ui_bounds.put(init.gpa, "cant_solve", .init(10, 90, 330, 60));
+    try ui_bounds.put(init.gpa, "setup_add_many", .init(10, 10, 120, 30));
+    try ui_bounds.put(init.gpa, "setup_show_faulty", .init(140, 15, 20, 20));
+    try ui_bounds.put(init.gpa, "setup_solve", .init(10, 50, 120, 30));
+    try ui_bounds.put(init.gpa, "setup_solve_slow", .init(10, 90, 250, 30));
+    try ui_bounds.put(init.gpa, "setup_node_count", .init(140, 55, 200, 20));
+    try ui_bounds.put(init.gpa, "setup_cant_solve", .init(10, 130, 330, 60));
 
     try ui_bounds.put(init.gpa, "sim_exit", .init(10, 10, 30, 30));
     try ui_bounds.put(init.gpa, "sim_back", .init(50, 10, 30, 30));
@@ -128,7 +129,7 @@ pub fn main(init: std.process.Init) !void {
         var hovering_ui = false;
         for (ui_bounds.keys(), ui_bounds.values()) |key, bound| {
             if ((setup_mode and std.mem.startsWith(u8, key, "sim")) or
-                (!setup_mode and !std.mem.startsWith(u8, key, "sim")))
+                (!setup_mode and std.mem.startsWith(u8, key, "setup")))
             {
                 continue;
             }
@@ -329,7 +330,7 @@ pub fn main(init: std.process.Init) !void {
         // Setup UI
         // "I don't want big diffs which is why I didn't just indent another level lol"
         if (setup_mode and !show_welcome_screen and !show_help_screen) {
-            if (rg.button(ui_bounds.get("add_many").?, "Add 50")) {
+            if (rg.button(ui_bounds.get("setup_add_many").?, "Add 50")) {
                 const to_place = 50;
                 var placed: u32 = 0;
                 var radius: f32 = 0;
@@ -358,22 +359,54 @@ pub fn main(init: std.process.Init) !void {
                 nodes.sortByX(0, nodes.count());
             }
 
-            _ = rg.checkBox(ui_bounds.get("show_faulty").?, "Show Faulty Node", &show_faulty);
+            _ = rg.checkBox(ui_bounds.get("setup_show_faulty").?, "Show Faulty Node", &show_faulty);
 
             const can_solve = nodes.count() > 1 and hasFaultyNode();
 
             if (!can_solve) {
                 const prev = rg.getStyle(.default, .{ .control = .text_color_normal });
                 rg.setStyle(.default, .{ .control = .text_color_normal }, colors.faulty.toInt());
-                _ = rg.label(ui_bounds.get("cant_solve").?, "Ensure at least two nodes exist\nand that one is marked faulty");
+                _ = rg.label(ui_bounds.get("setup_cant_solve").?, "Ensure at least two nodes exist\nand that one is marked faulty");
                 rg.setStyle(.default, .{ .control = .text_color_normal }, prev);
                 rg.disable();
             }
 
-            if (rg.button(ui_bounds.get("solve").?, "Find Faulty")) {
+            if (rg.button(ui_bounds.get("setup_solve").?, "Find Faulty")) {
                 init.gpa.free(solve_steps);
                 nodes.sortByX(0, nodes.count());
                 solve_steps = try solver.solve(&nodes, init.gpa, 0, nodes.count(), 0);
+
+                if (builtin.mode == .Debug) {
+                    for (solve_steps) |step| {
+                        switch (step.step) {
+                            .change_state => |state_change| {
+                                std.debug.print(
+                                    "Step: {d}, change node {d} state from {s} to {s}\n",
+                                    .{ step.id, state_change.index, @tagName(state_change.from), @tagName(state_change.to) },
+                                );
+                            },
+                            .found_at_index => |idx| {
+                                std.debug.print("Step: {d}, found faulty node at: {d}\n", .{ step.id, idx });
+                            },
+                            .compare_size => |size| {
+                                std.debug.print("Step: {d}, current comparison size: {d}\n", .{ step.id, size });
+                            },
+                            .start_compare => {
+                                std.debug.print("Step: {d}, start comparison\n", .{step.id});
+                            },
+                            else => unreachable,
+                        }
+                    }
+                }
+
+                try setupVisualizer(init.gpa, rng);
+                setup_mode = false;
+            }
+
+            if (rg.button(ui_bounds.get("setup_solve_slow").?, "Find Faulty Brute Force")) {
+                init.gpa.free(solve_steps);
+                nodes.sortByX(0, nodes.count());
+                solve_steps = try solver.solveSlow(&nodes, init.gpa, 0, nodes.count(), 0);
 
                 if (builtin.mode == .Debug) {
                     for (solve_steps) |step| {
@@ -407,7 +440,7 @@ pub fn main(init: std.process.Init) !void {
             }
 
             const node_count_text = try std.fmt.allocPrintSentinel(frame_alloc, "Node count: {d}", .{nodes.count()}, 0);
-            _ = rg.label(ui_bounds.get("node_count").?, node_count_text);
+            _ = rg.label(ui_bounds.get("setup_node_count").?, node_count_text);
         }
         // Simulation/Visualization UI
         else if (!setup_mode and !show_welcome_screen and !show_help_screen) {

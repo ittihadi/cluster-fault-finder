@@ -139,6 +139,83 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
     return steps.toOwnedSlice(gpa);
 }
 
+/// Returns a slice owned by the caller
+pub fn solveSlow(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: usize, step: u32) error{OutOfMemory}![]SolveStep {
+    var steps: std.ArrayList(SolveStep) = .empty;
+
+    if (nodes.count() == 1) {
+        try steps.append(gpa, .{ .id = step, .step = .incorrect_input });
+        return steps.toOwnedSlice(gpa);
+    }
+
+    var curr_step = step;
+    var idx = start;
+    while (idx < end) {
+        const lhs = nodes.array_list.items[idx .. idx + 1];
+        const rhs = nodes.array_list.items[idx + 1 .. idx + 2];
+
+        try steps.append(gpa, .{ .id = curr_step, .step = .{ .compare_size = 1 } });
+        try recordStateChangeSlice(&steps, gpa, lhs, idx, curr_step, .suspect_a);
+        try recordStateChangeSlice(&steps, gpa, rhs, idx + 1, curr_step, .suspect_b);
+        try steps.append(gpa, .{ .id = curr_step, .step = .start_compare });
+        curr_step += 1;
+
+        const res: CompareResult = compare(lhs, rhs);
+
+        // Record steps
+        switch (res) {
+            .equal => {
+                // Mark current checked group safe
+                try recordStateChangeSlice(&steps, gpa, nodes.array_list.items[idx .. idx + 2], idx, curr_step, .safe);
+            },
+            .left_slower => {
+                // Mark everything to the right safe
+                try recordStateChangeSlice(&steps, gpa, nodes.array_list.items[idx + 1 .. end], idx + 1, curr_step, .safe);
+            },
+            .right_slower => {
+                // Mark first group safe
+                try recordStateChangeSlice(&steps, gpa, lhs, idx, curr_step, .safe);
+
+                // Mark everything else safe
+                try recordStateChangeSlice(&steps, gpa, nodes.array_list.items[idx + 2 .. end], idx + 2, curr_step, .safe);
+            },
+        }
+        curr_step += 1;
+
+        switch (res) {
+            .equal => {
+                const remaining_nodes = end - (idx + 2);
+                if (remaining_nodes == 1) {
+                    // Last node is faulty
+                    try recordStateChangeSlice(&steps, gpa, nodes.array_list.items[idx + 2 .. end], idx + 2, curr_step, .counterfeit);
+                    try steps.append(gpa, .{ .id = curr_step, .step = .{ .found_at_index = idx + 2 } });
+                    break;
+                } else {
+                    // Step forward
+                    idx += 2;
+                }
+            },
+            .left_slower => {
+                // Mark left as faulty
+                try recordStateChangeSlice(&steps, gpa, lhs, idx, curr_step, .counterfeit);
+                try steps.append(gpa, .{ .id = curr_step, .step = .{ .found_at_index = idx } });
+                break;
+            },
+            .right_slower => {
+                // Mark right as faulty
+                try recordStateChangeSlice(&steps, gpa, rhs, idx + 1, curr_step, .counterfeit);
+                try steps.append(gpa, .{ .id = curr_step, .step = .{ .found_at_index = idx + 1 } });
+                break;
+            },
+        }
+    } else {
+        // We ran out of things to go over without a break
+        try steps.append(gpa, .{ .id = curr_step, .step = .incorrect_input });
+    }
+
+    return steps.toOwnedSlice(gpa);
+}
+
 /// This function is a black box in actuality, implementation here has to not matter to the algorithm as long as it's accurate
 fn compare(lhs: []Node, rhs: []Node) CompareResult {
     var lhs_faulty = false;
