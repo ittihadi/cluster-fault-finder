@@ -26,6 +26,7 @@ const colors = struct {
     pub const suspect_a: rl.Color = .init(0xea, 0xf3, 0x12, 0xff);
     pub const suspect_b: rl.Color = .init(0xf3, 0xaf, 0x12, 0xff);
     pub const faulty: rl.Color = .init(0xf3, 0x2e, 0x2e, 0xff);
+    pub const node_label: rl.Color = .init(0x08, 0x08, 0x2a, 0xff);
 };
 
 // Variables
@@ -182,9 +183,9 @@ pub fn main(init: std.process.Init) !void {
                 press_position = mouse_pos_world;
             }
 
+            // Get current node
+            selected_idx = nodes.findAtPos(mouse_pos_world.x, mouse_pos_world.y, 24);
             if (setup_mode) {
-                // Get current node
-                selected_idx = nodes.findAtPos(mouse_pos_world.x, mouse_pos_world.y, 24);
 
                 // Place Nodes
                 if (selected_idx == null and rl.isMouseButtonReleased(.left) and
@@ -328,6 +329,27 @@ pub fn main(init: std.process.Init) !void {
             }
 
             camera.end();
+
+            if (selected_idx) |hovered| {
+                const node = nodes.array_list.items[hovered];
+                const node_x: i32 = @trunc(node.x);
+                const node_y: i32 = @trunc(node.y);
+                const hover_text = try std.fmt.allocPrintSentinel(frame_alloc, "Node {d:2}{d:2}", .{ node_x, node_y }, 0);
+                const text_w = rl.measureText(hover_text, 20);
+                const text_vec_s = rl.getWorldToScreen2D(
+                    node.toVec().add(.init(0, -texture_orig.y - 2)),
+                    camera,
+                ).add(.init(@as(f32, @floatFromInt(-text_w)) / 2, -20));
+
+                rl.drawText(hover_text, @as(i32, @trunc(text_vec_s.x)) + 2, @as(i32, @trunc(text_vec_s.y)) + 2, 20, colors.node_label);
+                rl.drawText(hover_text, @trunc(text_vec_s.x), @trunc(text_vec_s.y), 20, switch (node.state) {
+                    .neutral => colors.hover,
+                    .safe => colors.safe,
+                    .counterfeit => colors.faulty,
+                    .suspect_a => colors.suspect_a,
+                    .suspect_b => colors.suspect_b,
+                });
+            }
         }
 
         // Draw UI
