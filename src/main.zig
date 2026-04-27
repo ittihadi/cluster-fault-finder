@@ -560,6 +560,30 @@ pub fn main(init: std.process.Init) !void {
             const sim_speedup_label = ui_bounds.get("sim_speedup_label").?;
             const playback_speed_text = try std.fmt.allocPrintSentinel(frame_alloc, "Speed: {d}x", .{visualizer.playback_speed}, 0);
             _ = rg.label(sim_speedup_label, playback_speed_text);
+
+            switch (solve_steps[visualizer.next_step].step) {
+                .found_at_index => |idx| {
+                    // Does this have to be this verbose? No.
+                    // Do I want to simplify it all the way? No.
+                    const pad: f32 = 10;
+                    const text = try std.fmt.allocPrintSentinel(frame_alloc, "Found faulty node: Node {d:2}{d:2}", .{
+                        @as(i32, @trunc(nodes.array_list.items[idx].x)),
+                        @as(i32, @trunc(nodes.array_list.items[idx].y)),
+                    }, 0);
+                    const text_w: f32 = @floatFromInt(rl.measureText(text, 20));
+                    const x = (@as(f32, @floatFromInt(rl.getScreenWidth())) / 2) - (text_w / 2) - pad;
+                    const y = @as(f32, @floatFromInt(rl.getScreenHeight())) - pad - pad - 20 - pad;
+                    const rec: rl.Rectangle = .init(x, y, text_w + pad * 2, 20 + pad * 2);
+                    const bg_col: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .base_color_normal })));
+                    const ln_col: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .border_color_normal })));
+                    const fg_col: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .text_color_normal })));
+                    const ln_w = rg.getStyle(.default, .{ .control = .border_width });
+                    rl.drawRectangleRec(rec, bg_col);
+                    rl.drawRectangleLinesEx(rec, @floatFromInt(ln_w), ln_col);
+                    rl.drawText(text, @trunc(x + pad), @trunc(y + pad), 20, fg_col);
+                },
+                else => {}, // No-op
+            }
         }
 
         if (show_help_screen) {
