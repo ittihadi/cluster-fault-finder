@@ -25,10 +25,13 @@ pub fn build(b: *std.Build) void {
     mod.addImport("raylib", raylib);
     mod.addImport("raygui", raygui);
 
-    const exe = b.addExecutable(.{ .name = "fake-coin-problem", .root_module = mod });
+    const exe = b.addExecutable(.{
+        .name = if (target.result.os.tag == .windows) "ClusterFaultFinder" else "cluster-fault-finder",
+        .root_module = mod,
+    });
     b.installArtifact(exe);
 
-    const exe_check = b.addExecutable(.{ .name = "fake-coin-problem", .root_module = mod });
+    const exe_check = b.addExecutable(.{ .name = "cluster-fault-finder", .root_module = mod });
 
     // Add run step
     const run_cmd = b.addRunArtifact(exe);
