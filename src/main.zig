@@ -61,6 +61,9 @@ pub fn main(init: std.process.Init) !void {
     defer rl.closeWindow();
 
     rl.setTargetFPS(60);
+    if (builtin.mode != .Debug) {
+        rl.setExitKey(.null);
+    }
 
     rg.setStyle(.default, .{ .default = .text_size }, 20);
     rg.setIconScale(2);
