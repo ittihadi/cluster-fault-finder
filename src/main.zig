@@ -473,7 +473,14 @@ pub fn main(init: std.process.Init) !void {
             _ = rg.label(ui_bounds.get("setup_node_count").?, node_count_text);
         }
         // Simulation/Visualization UI
-        else if (!setup_mode and !show_welcome_screen and !show_help_screen) {
+        else if (!setup_mode and !show_welcome_screen) {
+            defer rg.enable();
+            if (show_help_screen) {
+                // This doesn't catch when the user clicks directly on the control
+                // since the screen gets turned off earlier in the same frame but wtv
+                rg.disable();
+            }
+
             const sim_exit = ui_bounds.get("sim_exit").?;
             if (rg.button(sim_exit, rg.iconText(@intFromEnum(rg.IconName.cross_small), ""))) {
                 visualizer.playing = false;
@@ -595,7 +602,7 @@ pub fn main(init: std.process.Init) !void {
             const panel_bounds: rl.Rectangle = if (setup_mode)
                 .init(center_x - 250, center_y - 120, 500, 240)
             else
-                .init(center_x - 250, center_y - 180, 500, 360);
+                .init(center_x - 250, center_y - 190, 500, 380);
             const panel_color = rg.getStyle(.default, .{ .default = .background_color });
             const text_color: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .text_color_normal })));
 
@@ -616,8 +623,9 @@ pub fn main(init: std.process.Init) !void {
             else
                 \\- Use the Close button to go back to setup
                 \\  mode
-                \\- Use the Back, Pause/Play, and Forward
-                \\  buttons to navigate around the simulation
+                \\- Use the Back, Pause/Play, Forward, and
+                \\  Speed buttons to navigate around the
+                \\  simulation
                 \\- Move by holding Middle Mouse Button or
                 \\  Space and dragging the screen
                 \\- Zoom using the scroll wheel
