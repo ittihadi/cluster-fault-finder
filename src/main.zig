@@ -88,8 +88,9 @@ pub fn main(init: std.process.Init) !void {
     try ui_bounds.put(init.gpa, "setup_show_faulty", .init(140, 15, 20, 20));
     try ui_bounds.put(init.gpa, "setup_solve", .init(10, 50, 120, 30));
     try ui_bounds.put(init.gpa, "setup_solve_slow", .init(10, 90, 250, 30));
+    try ui_bounds.put(init.gpa, "setup_clear_nodes", .init(10, 130, 150, 30));
     try ui_bounds.put(init.gpa, "setup_node_count", .init(140, 55, 200, 20));
-    try ui_bounds.put(init.gpa, "setup_cant_solve", .init(10, 130, 330, 60));
+    try ui_bounds.put(init.gpa, "setup_cant_solve", .init(10, 170, 330, 40));
 
     try ui_bounds.put(init.gpa, "sim_exit", .init(10, 10, 30, 30));
     try ui_bounds.put(init.gpa, "sim_back", .init(50, 10, 30, 30));
@@ -469,6 +470,17 @@ pub fn main(init: std.process.Init) !void {
                 rg.enable();
             }
 
+            // Clear all nodes
+            {
+                const nodes_empty = nodes.array_list.items.len == 0;
+                if (nodes_empty) rg.disable();
+                defer if (nodes_empty) rg.enable();
+
+                if (rg.button(ui_bounds.get("setup_clear_nodes").?, "Clear Nodes")) {
+                    nodes.array_list.clearAndFree(init.gpa);
+                }
+            }
+
             const node_count_text = try std.fmt.allocPrintSentinel(frame_alloc, "Node count: {d}", .{nodes.count()}, 0);
             _ = rg.label(ui_bounds.get("setup_node_count").?, node_count_text);
         }
@@ -485,6 +497,10 @@ pub fn main(init: std.process.Init) !void {
             if (rg.button(sim_exit, rg.iconText(@intFromEnum(rg.IconName.cross_small), ""))) {
                 visualizer.playing = false;
                 setup_mode = true;
+                // Reset node states
+                for (nodes.array_list.items) |*node| {
+                    node.state = .neutral;
+                }
             }
 
             const sim_back = ui_bounds.get("sim_back").?;
