@@ -30,6 +30,8 @@ const colors = struct {
 };
 
 // Variables
+var screen_size: rl.Vector2 = undefined;
+
 var texture: rl.Texture2D = undefined;
 var floor: rl.Texture2D = undefined;
 var camera: rl.Camera2D = .{ .offset = .zero(), .rotation = 0, .target = .zero(), .zoom = 2 };
@@ -68,8 +70,8 @@ pub fn main(init: std.process.Init) !void {
     rg.setStyle(.default, .{ .default = .text_size }, 20);
     rg.setIconScale(2);
 
-    camera.offset.x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2;
-    camera.offset.y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2;
+    screen_size = .init(@floatFromInt(rl.getScreenWidth()), @floatFromInt(rl.getScreenHeight()));
+    camera.offset = screen_size.scale(0.5);
 
     var frame_arena: std.heap.ArenaAllocator = .init(init.gpa);
     defer frame_arena.deinit();
@@ -102,7 +104,7 @@ pub fn main(init: std.process.Init) !void {
     try ui_bounds.put(init.gpa, "sim_check", .init(10, 80, 240, 20));
     try ui_bounds.put(init.gpa, "sim_time", .init(10, 110, 240, 20));
 
-    try ui_bounds.put(init.gpa, "info", .init(@floatFromInt(rl.getScreenWidth() - 40), 10, 30, 30));
+    try ui_bounds.put(init.gpa, "info", .init(screen_size.x - 40, 10, 30, 30));
 
     texture = blk: {
         const img = try rl.loadImageFromMemory(".png", server_tex_file);
@@ -128,10 +130,10 @@ pub fn main(init: std.process.Init) !void {
         // Re-center camera on resize
         if (rl.isWindowResized()) {
             @branchHint(.unlikely);
-            camera.offset.x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2;
-            camera.offset.y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2;
+            screen_size = .init(@floatFromInt(rl.getScreenWidth()), @floatFromInt(rl.getScreenHeight()));
+            camera.offset = screen_size.scale(0.5);
 
-            try ui_bounds.put(init.gpa, "info", .init(@floatFromInt(rl.getScreenWidth() - 40), 10, 30, 30));
+            try ui_bounds.put(init.gpa, "info", .init(screen_size.x - 40, 10, 30, 30));
         }
 
         var hovering_ui = false;
@@ -251,8 +253,8 @@ pub fn main(init: std.process.Init) !void {
 
             // Draw Floor
             {
-                const half_w = @as(f32, @floatFromInt(rl.getScreenWidth())) / camera.zoom / 2;
-                const half_h = @as(f32, @floatFromInt(rl.getScreenHeight())) / camera.zoom / 2;
+                const half_w = screen_size.x / camera.zoom / 2;
+                const half_h = screen_size.y / camera.zoom / 2;
 
                 const tex_w: f32 = @floatFromInt(floor.width);
                 const tex_h: f32 = @floatFromInt(floor.height);
@@ -597,8 +599,8 @@ pub fn main(init: std.process.Init) !void {
                         @as(i32, @trunc(nodes.array_list.items[idx].y)),
                     }, 0);
                     const text_w: f32 = @floatFromInt(rl.measureText(text, 20));
-                    const x = (@as(f32, @floatFromInt(rl.getScreenWidth())) / 2) - (text_w / 2) - pad;
-                    const y = @as(f32, @floatFromInt(rl.getScreenHeight())) - pad - pad - 20 - pad;
+                    const x = (screen_size.x / 2) - (text_w / 2) - pad;
+                    const y = screen_size.y - pad - pad - 20 - pad;
                     const rec: rl.Rectangle = .init(x, y, text_w + pad * 2, 20 + pad * 2);
                     const bg_col: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .base_color_normal })));
                     const ln_col: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .border_color_normal })));
@@ -613,8 +615,8 @@ pub fn main(init: std.process.Init) !void {
         }
 
         if (show_help_screen) {
-            const center_x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2;
-            const center_y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2;
+            const center_x = screen_size.x / 2;
+            const center_y = screen_size.y / 2;
             const panel_bounds: rl.Rectangle = if (setup_mode)
                 .init(center_x - 250, center_y - 120, 500, 240)
             else
@@ -622,7 +624,7 @@ pub fn main(init: std.process.Init) !void {
             const panel_color = rg.getStyle(.default, .{ .default = .background_color });
             const text_color: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .text_color_normal })));
 
-            rl.drawRectangle(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), .init(0x88, 0x88, 0x88, 0x44));
+            rl.drawRectangle(0, 0, @trunc(screen_size.x), @trunc(screen_size.y), .init(0x88, 0x88, 0x88, 0x44));
             rl.drawRectangleRounded(panel_bounds, 0.05, 10, .fromInt(@bitCast(panel_color)));
 
             const title_text: [:0]const u8 = "Help";
@@ -661,13 +663,13 @@ pub fn main(init: std.process.Init) !void {
 
         if (show_welcome_screen) {
             // Draw welcome screen
-            const center_x = @as(f32, @floatFromInt(rl.getScreenWidth())) / 2;
-            const center_y = @as(f32, @floatFromInt(rl.getScreenHeight())) / 2;
+            const center_x = screen_size.x / 2;
+            const center_y = screen_size.y / 2;
             const panel_bounds: rl.Rectangle = .init(center_x - 250, center_y - 100, 500, 200);
             const panel_color = rg.getStyle(.default, .{ .default = .background_color });
             const text_color: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .text_color_normal })));
 
-            rl.drawRectangle(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), .init(0x88, 0x88, 0x88, 0x44));
+            rl.drawRectangle(0, 0, @trunc(screen_size.x), @trunc(screen_size.y), .init(0x88, 0x88, 0x88, 0x44));
             rl.drawRectangleRounded(panel_bounds, 0.05, 10, rl.colorAlpha(.fromInt(@bitCast(panel_color)), 0.7));
 
             const title_text: [:0]const u8 = "Cluster Computer Fault Tracker Simulator";
