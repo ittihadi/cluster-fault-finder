@@ -3,7 +3,7 @@ const rl = @import("raylib");
 const NodeCollection = @import("NodeCollection.zig");
 
 pub const CompareResult = enum { equal, left_slower, right_slower };
-pub const NodeState = enum { neutral, suspect_a, suspect_b, safe, counterfeit };
+pub const NodeState = enum { neutral, suspect_a, suspect_b, safe, counterfeit, finished_processing };
 pub const SolveStep = struct {
     id: u32,
     step: union(enum(u8)) {
@@ -16,6 +16,7 @@ pub const SolveStep = struct {
         },
         start_compare: void,
         compare_size: usize,
+        delay_faulty: void,
     },
 };
 
@@ -42,6 +43,17 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
         try steps.append(gpa, .{ .id = step, .step = .incorrect_input });
         return steps.toOwnedSlice(gpa);
     }
+
+    // Disable this for now, it's good for narrowing down the visualizer but:
+    // After the solving process it needs to be reset, so either
+    // - Add more solver steps for sorting
+    // - Move the start comparison step before changing the steps then add another step for the check delay
+    // - Something else
+    // if (@mod(step, 2) == 1) {
+    //     nodes.sortByY(start, end);
+    // } else {
+    //     nodes.sortByX(start, end);
+    // }
 
     // Assume last node is counterfeit
     const count = end - start;
@@ -72,25 +84,39 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
     // Record steps
     switch (res) {
         .equal => {
+            // Mark first two groups as finishing at the same time
+            try recordStateChangeSlice(&steps, gpa, lhs, start, step + 1, .finished_processing);
+            try recordStateChangeSlice(&steps, gpa, rhs, start + check_group_size, step + 1, .finished_processing);
+
             // Mark first group safe
-            try recordStateChangeSlice(&steps, gpa, lhs, start, step + 1, .safe);
+            try recordStateChangeSlice(&steps, gpa, lhs, start, step + 2, .safe);
 
             // Mark second group safe
-            try recordStateChangeSlice(&steps, gpa, rhs, start + check_group_size, step + 1, .safe);
+            try recordStateChangeSlice(&steps, gpa, rhs, start + check_group_size, step + 2, .safe);
         },
         .left_slower => {
+            // Mark second group as finishing first, delay, then mark first group as finishing
+            try recordStateChangeSlice(&steps, gpa, rhs, start + check_group_size, step + 1, .finished_processing);
+            try steps.append(gpa, .{ .id = step + 1, .step = .delay_faulty });
+            try recordStateChangeSlice(&steps, gpa, lhs, start, step + 2, .finished_processing);
+
             // Mark second group safe
-            try recordStateChangeSlice(&steps, gpa, rhs, start + check_group_size, step + 1, .safe);
+            try recordStateChangeSlice(&steps, gpa, rhs, start + check_group_size, step + 2, .safe);
 
             // Mark third group safe
-            try recordStateChangeSlice(&steps, gpa, rem, start + check_group_size + check_group_size, step + 1, .safe);
+            try recordStateChangeSlice(&steps, gpa, rem, start + check_group_size + check_group_size, step + 2, .safe);
         },
         .right_slower => {
+            // Mark first group as finishing first, delay, then mark second group as finishing
+            try recordStateChangeSlice(&steps, gpa, lhs, start, step + 1, .finished_processing);
+            try steps.append(gpa, .{ .id = step + 1, .step = .delay_faulty });
+            try recordStateChangeSlice(&steps, gpa, rhs, start + check_group_size, step + 2, .finished_processing);
+
             // Mark first group safe
-            try recordStateChangeSlice(&steps, gpa, lhs, start, step + 1, .safe);
+            try recordStateChangeSlice(&steps, gpa, lhs, start, step + 2, .safe);
 
             // Mark third group safe
-            try recordStateChangeSlice(&steps, gpa, rem, start + check_group_size + check_group_size, step + 1, .safe);
+            try recordStateChangeSlice(&steps, gpa, rem, start + check_group_size + check_group_size, step + 2, .safe);
         },
     }
 
@@ -100,11 +126,11 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
             .equal => {
                 switch (count) {
                     // Shouldn't be able to happen if there has to be ONE faulty node
-                    2 => try steps.append(gpa, .{ .id = step + 2, .step = .incorrect_input }),
+                    2 => try steps.append(gpa, .{ .id = step + 3, .step = .incorrect_input }),
                     // Do one more check
                     3, 4 => {
                         // -- Actual recurse here --
-                        const more_steps = try solve(nodes, gpa, start + 2, end, step + 2);
+                        const more_steps = try solve(nodes, gpa, start + 2, end, step + 3);
                         try steps.appendSlice(gpa, more_steps);
                         gpa.free(more_steps);
                     },
@@ -113,12 +139,12 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
             },
             // Left node is faulty
             .left_slower => {
-                try recordStateChangeSlice(&steps, gpa, lhs, start, step + 2, .counterfeit);
+                try recordStateChangeSlice(&steps, gpa, lhs, start, step + 3, .counterfeit);
                 try steps.append(gpa, .{ .id = step + 2, .step = .{ .found_at_index = start } });
             },
             // Right node is faulty
             .right_slower => {
-                try recordStateChangeSlice(&steps, gpa, rhs, start + 1, step + 2, .counterfeit);
+                try recordStateChangeSlice(&steps, gpa, rhs, start + 1, step + 3, .counterfeit);
                 try steps.append(gpa, .{ .id = step + 2, .step = .{ .found_at_index = start + 1 } });
             },
         }
@@ -126,11 +152,11 @@ pub fn solve(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, end: 
         // -- Actual recurse here --
         const more_steps = switch (res) {
             // Check the third group
-            .equal => try solve(nodes, gpa, start + check_group_size + check_group_size, end, step + 2),
+            .equal => try solve(nodes, gpa, start + check_group_size + check_group_size, end, step + 3),
             // Check the first group
-            .left_slower => try solve(nodes, gpa, start, start + check_group_size, step + 2),
+            .left_slower => try solve(nodes, gpa, start, start + check_group_size, step + 3),
             // Check the second group
-            .right_slower => try solve(nodes, gpa, start + check_group_size, start + check_group_size + check_group_size, step + 2),
+            .right_slower => try solve(nodes, gpa, start + check_group_size, start + check_group_size + check_group_size, step + 3),
         };
         try steps.appendSlice(gpa, more_steps);
         gpa.free(more_steps);
@@ -165,14 +191,30 @@ pub fn solveSlow(nodes: *NodeCollection, gpa: std.mem.Allocator, start: usize, e
         // Record steps
         switch (res) {
             .equal => {
+                // Mark current group finishing at the same time
+                try recordStateChangeSlice(&steps, gpa, nodes.array_list.items[idx .. idx + 2], idx, curr_step, .finished_processing);
+                try steps.append(gpa, .{ .id = curr_step, .step = .delay_faulty });
+                curr_step += 1;
                 // Mark current checked group safe
                 try recordStateChangeSlice(&steps, gpa, nodes.array_list.items[idx .. idx + 2], idx, curr_step, .safe);
             },
             .left_slower => {
+                // Mark second node as finishing first, delay, then mark first node as finishing
+                try recordStateChangeSlice(&steps, gpa, rhs, idx + 1, curr_step, .finished_processing);
+                try steps.append(gpa, .{ .id = curr_step, .step = .delay_faulty });
+                curr_step += 1;
+                try recordStateChangeSlice(&steps, gpa, lhs, idx, curr_step, .finished_processing);
+
                 // Mark everything to the right safe
                 try recordStateChangeSlice(&steps, gpa, nodes.array_list.items[idx + 1 .. end], idx + 1, curr_step, .safe);
             },
             .right_slower => {
+                // Mark first node as finishing first, delay, then mark second node as finishing
+                try recordStateChangeSlice(&steps, gpa, lhs, idx, curr_step, .finished_processing);
+                try steps.append(gpa, .{ .id = curr_step, .step = .delay_faulty });
+                curr_step += 1;
+                try recordStateChangeSlice(&steps, gpa, rhs, idx + 1, curr_step, .finished_processing);
+
                 // Mark first group safe
                 try recordStateChangeSlice(&steps, gpa, lhs, idx, curr_step, .safe);
 

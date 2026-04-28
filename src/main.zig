@@ -26,6 +26,7 @@ const colors = struct {
     pub const suspect_a: rl.Color = .init(0xea, 0xf3, 0x12, 0xff);
     pub const suspect_b: rl.Color = .init(0xf3, 0xaf, 0x12, 0xff);
     pub const faulty: rl.Color = .init(0xf3, 0x2e, 0x2e, 0xff);
+    pub const finished_processing: rl.Color = .init(0x4a, 0x69, 0xff, 0xff);
     pub const node_label: rl.Color = .init(0x08, 0x08, 0x2a, 0xff);
 
     pub inline fn fromState(state: solver.NodeState) rl.Color {
@@ -33,6 +34,7 @@ const colors = struct {
             .neutral => hover,
             .suspect_a => suspect_a,
             .suspect_b => suspect_b,
+            .finished_processing => finished_processing,
             .safe => safe,
             .counterfeit => faulty,
         };
@@ -65,6 +67,8 @@ const visualizer = struct {
     pub var step_frame_mapping: []u32 = &.{};
     pub var current_checks: u32 = 0;
     pub var playback_speed: u8 = 1;
+    pub var comparison_delay: u32 = undefined;
+    pub var comparison_extra_delay: u32 = undefined;
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -89,6 +93,9 @@ pub fn main(init: std.process.Init) !void {
 
     var prng: std.Random.DefaultPrng = .init(@intCast(std.Io.Timestamp.now(init.io, .real).toMilliseconds()));
     const rng = prng.random();
+
+    visualizer.comparison_delay = rng.intRangeAtMost(u32, 120, 180);
+    visualizer.comparison_extra_delay = rng.intRangeAtMost(u32, 60, 120);
 
     defer nodes.deinit(init.gpa);
     defer ui_bounds.deinit(init.gpa);
@@ -425,12 +432,15 @@ pub fn main(init: std.process.Init) !void {
                             .start_compare => {
                                 std.debug.print("Step: {d}, start comparison\n", .{step.id});
                             },
-                            else => unreachable,
+                            .delay_faulty => {
+                                std.debug.print("Step: {d}, extra delay from faulty node\n", .{step.id});
+                            },
+                            .incorrect_input => unreachable,
                         }
                     }
                 }
 
-                try setupVisualizer(init.gpa, rng);
+                try setupVisualizer(init.gpa);
                 setup_mode = false;
             }
 
@@ -457,12 +467,15 @@ pub fn main(init: std.process.Init) !void {
                             .start_compare => {
                                 std.debug.print("Step: {d}, start comparison\n", .{step.id});
                             },
-                            else => unreachable,
+                            .delay_faulty => {
+                                std.debug.print("Step: {d}, extra delay from faulty node\n", .{step.id});
+                            },
+                            .incorrect_input => unreachable,
                         }
                     }
                 }
 
-                try setupVisualizer(init.gpa, rng);
+                try setupVisualizer(init.gpa);
                 setup_mode = false;
             }
 
@@ -618,7 +631,7 @@ pub fn main(init: std.process.Init) !void {
             const panel_bounds: rl.Rectangle = if (setup_mode)
                 .init(center_x - 250, center_y - 120, 500, 240)
             else
-                .init(center_x - 250, center_y - 190, 500, 380);
+                .init(center_x - 250, center_y - 200, 500, 400);
             const panel_color = rg.getStyle(.default, .{ .default = .background_color });
             const text_color: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .text_color_normal })));
 
@@ -647,6 +660,7 @@ pub fn main(init: std.process.Init) !void {
                 \\- Zoom using the scroll wheel
                 \\Nodes are outlined the following way:
                 \\- Orange / Yellow - Groups being compared
+                \\- Blue - Groups that finished processing
                 \\- Red - Found faulty node
                 \\- Green - Known safe node
                 \\- No outline - Not currently considered
@@ -705,7 +719,7 @@ fn hasFaultyNode() bool {
     return false;
 }
 
-fn setupVisualizer(gpa: std.mem.Allocator, rng: std.Random) !void {
+fn setupVisualizer(gpa: std.mem.Allocator) !void {
     visualizer.playing = false;
     visualizer.next_step = 0;
     visualizer.current_frame = 0;
@@ -733,14 +747,23 @@ fn setupVisualizer(gpa: std.mem.Allocator, rng: std.Random) !void {
         const next = if (current_step < solve_steps.len - 1) solve_steps[current_step + 1] else curr;
         visualizer.step_frame_mapping[current_step] = current_frame;
         switch (curr.step) {
-            .start_compare => {
-                current_frame += rng.intRangeAtMost(u32, 120, 180);
-            },
-            .compare_size => |size| {
-                current_comparison_size = size;
-            },
+            .start_compare => current_frame += visualizer.comparison_delay,
+            .delay_faulty => current_frame += visualizer.comparison_extra_delay,
+            .compare_size => |size| current_comparison_size = size,
             .change_state => |change| {
                 switch (change.to) {
+                    // Do all this of the same type simultaneously
+                    .finished_processing => {
+                        switch (next.step) {
+                            .change_state => |next_change| {
+                                switch (next_change.to) {
+                                    .finished_processing => {},
+                                    else => current_frame += 40,
+                                }
+                            },
+                            else => {},
+                        }
+                    },
                     .safe, .neutral, .counterfeit => {
                         if (current_comparison_size < 10) {
                             current_frame += 1;
@@ -783,7 +806,7 @@ fn setupVisualizer(gpa: std.mem.Allocator, rng: std.Random) !void {
 
 fn applyStep(step: usize) void {
     switch (solve_steps[step].step) {
-        .compare_size, .found_at_index => {},
+        .compare_size, .found_at_index, .delay_faulty => {},
         .start_compare => visualizer.current_checks += 1,
         .change_state => |change| {
             nodes.array_list.items[change.index].state = change.to;
@@ -795,7 +818,7 @@ fn applyStep(step: usize) void {
 
 fn unapplyStep(step: usize) void {
     switch (solve_steps[step].step) {
-        .compare_size, .found_at_index => {},
+        .compare_size, .found_at_index, .delay_faulty => {},
         .start_compare => {},
         .change_state => |change| {
             nodes.array_list.items[change.index].state = change.from;
