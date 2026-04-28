@@ -27,6 +27,16 @@ const colors = struct {
     pub const suspect_b: rl.Color = .init(0xf3, 0xaf, 0x12, 0xff);
     pub const faulty: rl.Color = .init(0xf3, 0x2e, 0x2e, 0xff);
     pub const node_label: rl.Color = .init(0x08, 0x08, 0x2a, 0xff);
+
+    pub inline fn fromState(state: solver.NodeState) rl.Color {
+        return switch (state) {
+            .neutral => hover,
+            .suspect_a => suspect_a,
+            .suspect_b => suspect_b,
+            .safe => safe,
+            .counterfeit => faulty,
+        };
+    }
 };
 
 // Variables
@@ -307,13 +317,7 @@ pub fn main(init: std.process.Init) !void {
                             dest_rect,
                             texture_orig,
                             camera.rotation,
-                            switch (node.state) {
-                                .counterfeit => colors.faulty,
-                                .safe => colors.safe,
-                                .suspect_a => colors.suspect_a,
-                                .suspect_b => colors.suspect_b,
-                                else => unreachable,
-                            },
+                            colors.fromState(node.state),
                         );
                     }
                 }
@@ -348,13 +352,7 @@ pub fn main(init: std.process.Init) !void {
                 ).add(.init(@as(f32, @floatFromInt(-text_w)) / 2, -20));
 
                 rl.drawText(hover_text, @as(i32, @trunc(text_vec_s.x)) + 2, @as(i32, @trunc(text_vec_s.y)) + 2, 20, colors.node_label);
-                rl.drawText(hover_text, @trunc(text_vec_s.x), @trunc(text_vec_s.y), 20, switch (node.state) {
-                    .neutral => colors.hover,
-                    .safe => colors.safe,
-                    .counterfeit => colors.faulty,
-                    .suspect_a => colors.suspect_a,
-                    .suspect_b => colors.suspect_b,
-                });
+                rl.drawText(hover_text, @trunc(text_vec_s.x), @trunc(text_vec_s.y), 20, colors.fromState(node.state));
             }
         }
 
