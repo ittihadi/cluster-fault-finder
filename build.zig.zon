@@ -1,6 +1,6 @@
 .{
-    .name = .fake_coin_problem_2,
-    .version = "0.0.1",
+    .name = .cluster_fault_finder,
+    .version = "0.1.0",
     .dependencies = .{
         .raylib_zig = .{
             .url = "git+https://github.com/raylib-zig/raylib-zig?ref=devel#4b6a05cd102d51f00523dd5c5e18e628df359d20",
@@ -9,5 +9,5 @@
     },
     .minimum_zig_version = "0.16.0",
     .paths = .{""},
-    .fingerprint = 0x9e0b93501526da01,
+    .fingerprint = 0x3838720e3e815980,
 }

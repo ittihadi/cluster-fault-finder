@@ -26,14 +26,19 @@ This problem will be solved using the
    - To remove a node, hover over a node and press the `Right Mouse Button`
    - To mark a node as faulty, hover over an existing node and press the `Left
      Mouse Button`
-3. Once the nodes are setup and the faulty node set, press the `Solve` button
-   on the top left of the screen
+3. Once the nodes are setup and the faulty node set, press the `Find Faulty`
+   button on the top left of the screen
+   - For comparison, the `Find Faulty Brute Force` button can be used to do a
+     brute force solve
 4. You will be taken to the visualization screen, use the `Play` button to see
    the solution step by step
    - Use the `Close` button to go back into the setup screen
    - Use the `Pause` button to pause the playback
    - Use the `Back` button to go back a step
    - Use the `Forward` button to go forward a step
+   - Use the `Speed` button to change the playback speed
+5. To see the instructions again, use the `Help` button on the top right to
+   open the help screen
 
 ## Compiling
 
@@ -43,8 +48,8 @@ afterwards simply
 
 ```sh
 # Clone the repository
-git clone https://github.com/ittihadi/fake-coin-problem
-cd fake-coin-problem
+git clone https://github.com/ittihadi/cluster-fault-finder
+cd cluster-fault-finder
 
 # Build the application in release mode
 zig build run --release=safe
