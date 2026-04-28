@@ -631,7 +631,7 @@ pub fn main(init: std.process.Init) !void {
             const panel_bounds: rl.Rectangle = if (setup_mode)
                 .init(center_x - 250, center_y - 120, 500, 240)
             else
-                .init(center_x - 250, center_y - 200, 500, 400);
+                .init(center_x - 250, center_y - 210, 500, 420);
             const panel_color = rg.getStyle(.default, .{ .default = .background_color });
             const text_color: rl.Color = .fromInt(@bitCast(rg.getStyle(.default, .{ .control = .text_color_normal })));
 
@@ -667,9 +667,14 @@ pub fn main(init: std.process.Init) !void {
             ;
             rl.drawText(inst_txt, @trunc(panel_bounds.x + 16), @trunc(panel_bounds.y + 52), 20, text_color);
 
+            const source_txt: [:0]const u8 = "@ https://github.com/ittihadi/cluster-fault-finder";
+            const source_w: f32 = @floatFromInt(rl.measureText(source_txt, 10));
+            const source_y: i32 = @trunc(panel_bounds.y + panel_bounds.height - 16 - 10);
+            rl.drawText(source_txt, @trunc(center_x - source_w / 2), source_y, 10, text_color);
+
             const author_txt: [:0]const u8 = "Application by Ittihadi Ramadhan (24343038)";
             const author_w: f32 = @floatFromInt(rl.measureText(author_txt, 10));
-            const author_y: i32 = @trunc(panel_bounds.y + panel_bounds.height - 16 - 10);
+            const author_y: i32 = source_y - 12;
             rl.drawText(author_txt, @trunc(center_x - author_w / 2), author_y, 10, text_color);
         }
 
